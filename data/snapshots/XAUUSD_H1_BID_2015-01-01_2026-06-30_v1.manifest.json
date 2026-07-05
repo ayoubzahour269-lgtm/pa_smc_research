@@ -22,7 +22,7 @@
   "ohlc_violations": 0,
   "gaps_over_1h": 2853,
   "largest_gap": "3 days 05:00:00",
-  "downloaded_at_utc": "2026-07-04T21:17:06.122351+00:00",
+  "downloaded_at_utc": "2026-07-05T13:32:39.352749+00:00",
   "csv_file": "XAUUSD_H1_BID_2015-01-01_2026-06-30_v1.csv",
   "sha256": "1c9f7d0349f78879c7ae116febc797a0b225e69c77acdd9f2faac06a8df13606",
   "version": "v1",

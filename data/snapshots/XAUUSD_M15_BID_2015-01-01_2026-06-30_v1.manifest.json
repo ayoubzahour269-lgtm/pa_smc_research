@@ -1,0 +1,30 @@
+{
+  "instrument": "XAUUSD - or spot",
+  "instrument_constant": "INSTRUMENT_FX_METALS_XAU_USD",
+  "source": "Dukascopy Bank SA (via dukascopy-python)",
+  "library_version": "4.0.1",
+  "offer_side": "BID",
+  "interval": "M15",
+  "timezone": "UTC",
+  "start": "2015-01-01 23:00:00+00:00",
+  "end": "2026-06-30 23:00:00+00:00",
+  "n_bars": 271660,
+  "columns": [
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume"
+  ],
+  "price_close_min": 1047.229,
+  "price_close_max": 5585.555,
+  "nan_count": 0,
+  "ohlc_violations": 0,
+  "gaps_over_15min": 2976,
+  "largest_gap": "3 days 04:30:00",
+  "downloaded_at_utc": "2026-07-05T14:40:42.426574+00:00",
+  "csv_file": "XAUUSD_M15_BID_2015-01-01_2026-06-30_v1.csv",
+  "sha256": "410784c4c325608b386c2638938c8f33d31ad96b2314c68aaa499ff7911de2e1",
+  "version": "v1",
+  "note": "IMMUABLE - ne jamais reecrire. Toute nouvelle donnee = nouvelle version."
+}
