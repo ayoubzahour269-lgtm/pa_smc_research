@@ -61,3 +61,44 @@ def test_hypothese1_reproductible():
     assert 2600 <= len(R) <= 2720, f"Nombre de trades inattendu : {len(R)}"
     esp = float(R.mean())
     assert -0.060 <= esp <= -0.045, f"Esperance-R hors reference : {esp:.4f}"
+
+
+def _tiny_time_exit_df():
+    """5 barres, ATR=1, un long en barre 0 (entree a open[1]).
+    Prix plats -> ni SL ni TP -> sortie time-exit au close final.
+    Avec close_final == entry, (ep - entry) ~ 0 => le R isole le cout."""
+    idx = pd.date_range("2020-01-01", periods=5, freq="h", tz="UTC")
+    price = 2000.0
+    df = pd.DataFrame(
+        {"open": price, "high": price + 0.2, "low": price - 0.2,
+         "close": price, "atr": 1.0},
+        index=idx,
+    )
+    signal = np.array([1, 0, 0, 0, 0])
+    return df, signal
+
+
+def test_cost_series_constante_equivaut_au_forfait():
+    """cost_series constant = k partout doit reproduire exactement cost_usd=k."""
+    df, signal = _tiny_time_exit_df()
+    k = 0.40
+    R_forfait = run_backtest(signal, df, cost_usd=k)
+    R_series = run_backtest(signal, df, cost_series=np.full(len(df), k))
+    assert len(R_forfait) == len(R_series) == 1
+    assert np.allclose(R_forfait, R_series), (R_forfait, R_series)
+
+
+def test_cost_series_plus_cher_reduit_le_R():
+    """Un spread reel plus cher que le forfait doit faire baisser le R."""
+    df, signal = _tiny_time_exit_df()
+    R_cheap = run_backtest(signal, df, cost_series=np.full(len(df), 0.40))
+    R_expensive = run_backtest(signal, df, cost_series=np.full(len(df), 2.0))
+    assert R_expensive[0] < R_cheap[0], (R_cheap, R_expensive)
+
+
+def test_cost_series_mauvaise_longueur_leve_valueerror():
+    """Un cost_series de longueur != n doit lever ValueError (garde-fou)."""
+    df, signal = _tiny_time_exit_df()
+    import pytest
+    with pytest.raises(ValueError):
+        run_backtest(signal, df, cost_series=np.full(len(df) - 1, 0.40))

@@ -8,13 +8,16 @@ SL_MULT, TP_MULT, MAX_HOLD, COST_USD = 1.5, 3.0, 100, 0.40
 
 
 def run_backtest(signal, df, sl_mult=SL_MULT, tp_mult=TP_MULT,
-                 max_hold=MAX_HOLD, cost_usd=COST_USD):
+                 max_hold=MAX_HOLD, cost_usd=COST_USD, cost_series=None):
     """Un trade à la fois, entrée à l'ouverture de la barre suivante,
     SL/TP en multiples d'ATR. Renvoie le tableau des R réalisés."""
     o, h, l, c = (df[x].to_numpy() for x in ["open", "high", "low", "close"])
     atr = df["atr"].to_numpy()
     sig = np.asarray(signal)
     n = len(df)
+    cs = None if cost_series is None else np.asarray(cost_series, dtype=float)
+    if cs is not None and len(cs) != n:
+        raise ValueError("cost_series length must equal df length")
     R_list, i = [], 0
     while i < n - 1:
         s = sig[i]
@@ -22,6 +25,12 @@ def run_backtest(signal, df, sl_mult=SL_MULT, tp_mult=TP_MULT,
             d = 1 if s == 1 else -1
             entry = o[i + 1]
             R_usd = sl_mult * atr[i]
+            if cs is None:
+                cost = cost_usd
+            else:
+                cost = cs[i + 1]
+                if np.isnan(cost):
+                    cost = cost_usd
             sl = entry - d * sl_mult * atr[i]
             tp = entry + d * tp_mult * atr[i]
             ep, ej = None, None
@@ -38,7 +47,7 @@ def run_backtest(signal, df, sl_mult=SL_MULT, tp_mult=TP_MULT,
             if ep is None:
                 ej = end - 1
                 ep = c[ej]
-            R_list.append((d * (ep - entry) - cost_usd) / R_usd)
+            R_list.append((d * (ep - entry) - cost) / R_usd)
             i = ej + 1
         else:
             i += 1
