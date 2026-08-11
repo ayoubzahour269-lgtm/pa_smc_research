@@ -23,6 +23,7 @@ from typing import Any
 
 import pandas as pd
 
+from alphalab.alpha import diversity
 from alphalab.alpha.base import GEOMETRY, Context, build_features
 from alphalab.alpha.registry import all_families, family_label
 from alphalab.backtest import protocol
@@ -47,6 +48,10 @@ class ExplorationResult:
     timeframe: str
     symbols: tuple[str, ...]
     missing_peers: tuple[str, ...]
+    #: Correction alternative, calculee sur le nombre EFFECTIF de tests independants.
+    #: Publiee comme borne basse informative, jamais comme critere de retenue.
+    correction_effective: MultipleTestResult | None = None
+    diversity_report: diversity.DiversityReport | None = None
 
     @property
     def survivors(self) -> pd.DataFrame:
@@ -80,6 +85,16 @@ class ExplorationResult:
                 "Resultat in-sample uniquement — le hold-out reste seul juge."
             ]
         lines.append(f"Detail de la correction seule : {self.correction.summary()}")
+        if self.diversity_report is not None:
+            lines.append(self.diversity_report.summary())
+        if self.correction_effective is not None:
+            lines.append(
+                "Borne basse (correction sur les tests EFFECTIVEMENT independants, "
+                f"m = {self.correction_effective.n_trials}) : "
+                f"{self.correction_effective.n_survivors} survivante(s). "
+                "Cette borne n'est PAS le critere de retenue — elle indique seulement "
+                "si le rejet tient a la severite du comptage ou a la faiblesse de la preuve."
+            )
         if self.missing_peers:
             lines.append(
                 "Facteur dollar INDISPONIBLE : "
@@ -138,6 +153,7 @@ def run(
     missing = tuple(s for s in ("EURUSD", "GBPUSD", "USDJPY") if s not in known_peers)
 
     rows: list[dict[str, Any]] = []
+    diversity_report: diversity.DiversityReport | None = None
     for symbol in symbols:
         peers = [p for p in symbols if p != symbol]
         ctx = Context(
@@ -150,8 +166,13 @@ def run(
             peers={p: frames[p] for p in peers},
         )
         single = {symbol: market[symbol]}
+        families = all_families(peers)
+        if diversity_report is None:
+            # Mesuree une fois, sur le premier symbole : la redondance est une
+            # propriete du CATALOGUE, pas de l'instrument.
+            diversity_report = diversity.analyse(ctx, families)
 
-        for family in all_families(peers):
+        for family in families:
             label = f"{family_label(family)}@{symbol}"
 
             # ENREGISTREMENT AVANT LECTURE DU RESULTAT — ordre non negociable.
@@ -220,9 +241,20 @@ def run(
     labels = [f"{r['famille']}@{r['symbole']}" for r in rows]
     pvalues = [r["p_value"] if r["p_value"] is not None else float("nan") for r in rows]
 
-    correction = benjamini_hochberg(
-        labels, pvalues, alpha=alpha, n_trials=protocol.n_trials(journal_path)
-    )
+    n_journal = protocol.n_trials(journal_path)
+    correction = benjamini_hochberg(labels, pvalues, alpha=alpha, n_trials=n_journal)
+
+    # Seconde lecture, informative : si le catalogue est redondant, le compte brut
+    # surestime le nombre de chances reelles de tomber sur un faux positif. On publie
+    # donc aussi la correction sur le nombre effectif — sans jamais s'en servir comme
+    # critere de retenue, pour qu'aucun resultat ne puisse etre sauve en declarant
+    # apres coup que ses tests etaient redondants.
+    correction_effective = None
+    if diversity_report is not None and diversity_report.n_families > 1:
+        shrink = diversity_report.n_effective / diversity_report.n_families
+        correction_effective = benjamini_hochberg(
+            labels, pvalues, alpha=alpha, n_trials=max(int(round(n_journal * shrink)), len(labels))
+        )
     table["q_value"] = list(correction.qvalues)
     # Survivre = franchir toutes les portes ET resister a la correction multiple.
     table["survit_correction"] = [
@@ -235,4 +267,6 @@ def run(
         timeframe=timeframe,
         symbols=tuple(symbols),
         missing_peers=missing,
+        correction_effective=correction_effective,
+        diversity_report=diversity_report,
     )

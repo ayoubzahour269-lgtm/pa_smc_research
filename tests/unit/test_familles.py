@@ -66,14 +66,31 @@ def test_les_noms_de_familles_sont_uniques() -> None:
 
 def test_le_catalogue_couvre_les_themes_annonces() -> None:
     noms = {f.name for f in core_families()}
-    for attendu in ("seance_derive", "opening_range", "momentum_conditionne", "smc_choch"):
+    attendus = (
+        "seance_derive",
+        "opening_range",
+        "cassure",
+        "smc_choch",
+        "regime_volatilite",
+        "momentum_multijour",
+        "saisonnalite_intraday",
+        "ensemble",
+    )
+    for attendu in attendus:
         assert attendu in noms
+
+
+def test_les_variantes_de_cassure_sont_declarees_distinctement() -> None:
+    """Un declencheur unique, des filtres en parametres : chaque variante reste un essai."""
+    labels = [family_label(f) for f in core_families() if f.name == "cassure"]
+    assert len(labels) == len(set(labels)) >= 3
+    assert all(lbl.startswith("cassure[") for lbl in labels)
 
 
 def test_sans_pair_les_familles_inter_actifs_sont_absentes() -> None:
     """Il ne faut pas laisser croire qu'une piste a ete testee alors qu'elle manquait."""
     assert crossasset_families([]) == []
-    assert len(crossasset_families(["EURUSD"])) == 3
+    assert len(crossasset_families(["EURUSD"])) == 4
 
 
 # --------------------------------------------------------------------------------------

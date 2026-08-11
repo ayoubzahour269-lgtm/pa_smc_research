@@ -153,3 +153,85 @@ class CorrelationDivergence(AlphaFamily):
         )
         signal = pd.Series(raw, index=ctx.df.index, name="signal")
         return signal.where(signal != signal.shift(1, fill_value=0), 0)
+
+
+class Cointegration(AlphaFamily):
+    """Deux actifs partagent-ils un equilibre de long terme vers lequel ils reviennent ?
+
+    Difference essentielle avec `CorrelationDivergence`, qui utilise une simple
+    difference de log-prix : ici le ratio de couverture est ESTIME sur une fenetre
+    glissante, et la convergence n'est pariee que si l'ecart revient effectivement vers
+    sa moyenne a une vitesse mesurable (demi-vie).
+
+    Deux actifs peuvent etre fortement correles sans etre cointegres : ils bougent
+    ensemble mais leur ecart derive sans jamais revenir. Parier la convergence dans ce
+    cas est une facon classique de perdre lentement, puis brutalement.
+    """
+
+    name = "cointegration"
+    question = (
+        "Une fois le ratio de couverture estime sur le passe, l'ecart entre deux actifs "
+        "revient-il vers sa moyenne assez vite pour etre exploitable ?"
+    )
+
+    def __init__(
+        self,
+        peer: str,
+        beta_window: int = 480,
+        z_window: int = 120,
+        z_threshold: float = 2.0,
+        max_half_life: float = 48.0,
+    ) -> None:
+        self.peer = peer
+        self.beta_window = beta_window
+        self.z_window = z_window
+        self.z_threshold = z_threshold
+        self.max_half_life = max_half_life
+
+    @property
+    def name_with_peer(self) -> str:
+        return f"{self.name}[{self.peer}]"
+
+    def parameters(self) -> dict[str, Any]:
+        return {
+            "pair": self.peer,
+            "fenetre_beta": self.beta_window,
+            "fenetre_z": self.z_window,
+            "seuil_z": self.z_threshold,
+            "demi_vie_max": self.max_half_life,
+        }
+
+    def signal(self, ctx: Context) -> pd.Series:
+        peer_close = _peer_close(ctx, self.peer)
+        if peer_close is None:
+            return pd.Series(0, index=ctx.df.index, name="signal")
+
+        own = np.log(ctx.df["close"])
+        other = np.log(peer_close)
+
+        # Ratio de couverture par regression glissante : cov / var, sur le passe seul.
+        covariance = own.rolling(self.beta_window).cov(other)
+        variance = other.rolling(self.beta_window).var(ddof=1).replace(0.0, np.nan)
+        beta = covariance / variance
+
+        spread = own - beta * other
+        z = indicators.zscore(spread, self.z_window)
+
+        # Demi-vie du retour a la moyenne, estimee sur un AR(1) glissant de l'ecart.
+        # Une demi-vie infinie ou negative signale un ecart qui derive au lieu de
+        # revenir : dans ce cas on ne parie pas.
+        lagged = spread.shift(1)
+        delta = spread - lagged
+        slope = lagged.rolling(self.z_window).cov(delta) / lagged.rolling(self.z_window).var(
+            ddof=1
+        ).replace(0.0, np.nan)
+        half_life = -np.log(2.0) / slope.where(slope < 0)
+        reverting = half_life.between(1.0, self.max_half_life)
+
+        raw = np.where(
+            (z >= self.z_threshold) & reverting,
+            -1,
+            np.where((z <= -self.z_threshold) & reverting, 1, 0),
+        )
+        signal = pd.Series(raw, index=ctx.df.index, name="signal")
+        return signal.where(signal != signal.shift(1, fill_value=0), 0)

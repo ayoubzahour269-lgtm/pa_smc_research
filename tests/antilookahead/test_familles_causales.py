@@ -54,13 +54,13 @@ def test_signal_de_famille_causal(family) -> None:
     )
 
 
-def test_le_spread_variable_ne_fait_pas_anticiper_la_microstructure() -> None:
-    """Les familles de microstructure lisent le cout : leur quantile doit rester glissant.
+def test_le_spread_variable_ne_fait_pas_anticiper() -> None:
+    """Les familles qui lisent le cout doivent garder un quantile GLISSANT.
 
     Un quantile calcule sur tout l'historique de spread ferait entrer le futur dans la
-    decision — c'est le piege propre a ces deux familles.
+    decision — c'est le piege propre aux familles qui prennent le spread pour signal.
     """
-    from alphalab.alpha.families import microstructure
+    from alphalab.alpha.families import breakout, microstructure
 
     rng = pd.Series(
         pd.Series(range(len(DF)))
@@ -76,7 +76,7 @@ def test_le_spread_variable_ne_fait_pas_anticiper_la_microstructure() -> None:
         return ctx
 
     for family in (
-        microstructure.LiquidityRegimeBreakout(),
+        breakout.Breakout(condition="spread_bas"),
         microstructure.SpreadShockFade(),
     ):
         assert_causal(

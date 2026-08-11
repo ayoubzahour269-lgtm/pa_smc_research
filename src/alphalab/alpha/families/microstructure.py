@@ -10,6 +10,10 @@ pour signal risque de ne decouvrir que "trader quand c'est moins cher est moins 
 Le temoin apparie a l'heure du protocole neutralise en grande partie ce biais, puisque
 le profil de spread est fortement horaire. La porte de sensibilite au cout (R > 0 a
 1,5x le spread) acheve le controle.
+
+Ce module ne contient plus qu'une famille : la cassure en regime de liquidite
+abondante partageait son declencheur avec les autres cassures et vit desormais dans
+`families/breakout.py` sous le filtre `spread_bas`.
 """
 
 from __future__ import annotations
@@ -21,48 +25,6 @@ import pandas as pd
 
 from alphalab.alpha.base import AlphaFamily, Context
 from alphalab.features import indicators
-
-
-class LiquidityRegimeBreakout(AlphaFamily):
-    """Une cassure en regime de liquidite abondante vaut-elle mieux qu'une autre ?"""
-
-    name = "microstructure_liquidite"
-    question = (
-        "Une cassure survenue alors que le spread est dans son quantile bas — donc en "
-        "liquidite abondante — se comporte-t-elle differemment des autres ?"
-    )
-
-    def __init__(self, lookback: int = 24, spread_quantile: float = 0.4, window: int = 480) -> None:
-        self.lookback = lookback
-        self.spread_quantile = spread_quantile
-        self.window = window
-
-    def parameters(self) -> dict[str, Any]:
-        return {
-            "lookback": self.lookback,
-            "quantile_spread": self.spread_quantile,
-            "fenetre_quantile": self.window,
-        }
-
-    def signal(self, ctx: Context) -> pd.Series:
-        index = pd.DatetimeIndex(ctx.df.index)
-        spread = ctx.cost.spread.reindex(index)
-        # Quantile GLISSANT, jamais global : un quantile calcule sur tout l'historique
-        # ferait entrer le futur dans la decision. Le decalage d'une barre garantit que
-        # le seuil ne depend pas de la barre qu'il qualifie.
-        threshold = spread.shift(1).rolling(self.window).quantile(self.spread_quantile)
-        cheap = spread <= threshold
-
-        close = ctx.df["close"]
-        hh = indicators.rolling_high(ctx.df, self.lookback)
-        ll = indicators.rolling_low(ctx.df, self.lookback)
-        above = close > hh
-        below = close < ll
-        first_above = above & ~above.shift(1, fill_value=False)
-        first_below = below & ~below.shift(1, fill_value=False)
-
-        raw = np.where(first_above & cheap, 1, np.where(first_below & cheap, -1, 0))
-        return pd.Series(raw, index=index, name="signal")
 
 
 class SpreadShockFade(AlphaFamily):

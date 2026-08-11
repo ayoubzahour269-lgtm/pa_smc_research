@@ -1,10 +1,12 @@
-"""Familles de tendance : momentum conditionne, expansion apres compression.
+"""Repli de tendance.
 
-La cassure nue a deja ete testee et rejetee dans l'historique de ce projet, sur deux
-instruments. On ne la retente donc PAS a l'identique. La question ouverte, et
-differente, est celle du conditionnement : une cassure se comporte-t-elle autrement
-selon le regime de tendance et la seance ? Un resultat negatif ici serait une reponse
-franche, pas une repetition.
+Ce module ne contient plus qu'une famille. Les deux autres — momentum conditionne et
+compression suivie d'expansion — reposaient sur le meme declencheur que la cassure
+(une cloture depassant un extreme recent) et ont ete fusionnees dans
+`families/breakout.py`, ou le filtre est devenu un parametre declare.
+
+Le repli de tendance reste ici parce que son declencheur est different : il attend une
+traversee de seuil du RSI dans une tendance etablie, et ne regarde aucun extreme.
 """
 
 from __future__ import annotations
@@ -15,82 +17,7 @@ import numpy as np
 import pandas as pd
 
 from alphalab.alpha.base import AlphaFamily, Context
-from alphalab.features import indicators, sessions
-
-
-class ConditionedMomentum(AlphaFamily):
-    """Une cassure filtree par la force de tendance et la seance vaut-elle mieux ?"""
-
-    name = "momentum_conditionne"
-    question = (
-        "La cassure d'un extreme recent devient-elle exploitable lorsqu'elle est "
-        "filtree par un ADX eleve et restreinte aux seances liquides ?"
-    )
-
-    def __init__(
-        self, lookback: int = 24, adx_min: float = 25.0, session: str = "newyork"
-    ) -> None:
-        self.lookback = lookback
-        self.adx_min = adx_min
-        self.session = session
-
-    def parameters(self) -> dict[str, Any]:
-        return {"lookback": self.lookback, "adx_min": self.adx_min, "seance": self.session}
-
-    def signal(self, ctx: Context) -> pd.Series:
-        index = pd.DatetimeIndex(ctx.df.index)
-        close = ctx.df["close"]
-        hh = indicators.rolling_high(ctx.df, self.lookback)
-        ll = indicators.rolling_low(ctx.df, self.lookback)
-
-        above = close > hh
-        below = close < ll
-        first_above = above & ~above.shift(1, fill_value=False)
-        first_below = below & ~below.shift(1, fill_value=False)
-
-        strong = ctx.features["adx"] >= self.adx_min
-        window = next(w for w in sessions.SESSIONS if w.name == self.session).mask(index)
-        allowed = strong & window
-
-        raw = np.where(first_above & allowed, 1, np.where(first_below & allowed, -1, 0))
-        return pd.Series(raw, index=index, name="signal")
-
-
-class VolatilityExpansion(AlphaFamily):
-    """Une compression de volatilite annonce-t-elle une expansion directionnelle ?"""
-
-    name = "compression_expansion"
-    question = (
-        "Apres une contraction de l'ATR court par rapport a l'ATR long, la premiere "
-        "sortie de la plage recente se poursuit-elle ?"
-    )
-
-    def __init__(
-        self, ratio_max: float = 0.8, lookback: int = 12, session: str = "newyork"
-    ) -> None:
-        self.ratio_max = ratio_max
-        self.lookback = lookback
-        self.session = session
-
-    def parameters(self) -> dict[str, Any]:
-        return {"ratio_max": self.ratio_max, "lookback": self.lookback, "seance": self.session}
-
-    def signal(self, ctx: Context) -> pd.Series:
-        index = pd.DatetimeIndex(ctx.df.index)
-        close = ctx.df["close"]
-        # Compression mesuree sur la barre PRECEDENTE : la compression doit exister
-        # avant la sortie, sinon on decrit la sortie elle-meme.
-        compressed = ctx.features["atr_ratio"].shift(1) <= self.ratio_max
-        hh = indicators.rolling_high(ctx.df, self.lookback)
-        ll = indicators.rolling_low(ctx.df, self.lookback)
-
-        window = next(w for w in sessions.SESSIONS if w.name == self.session).mask(index)
-        allowed = compressed & window
-
-        raw = np.where((close > hh) & allowed, 1, np.where((close < ll) & allowed, -1, 0))
-        signal = pd.Series(raw, index=index, name="signal")
-        # Une seule entree par episode de compression.
-        return signal.where(signal != signal.shift(1, fill_value=0), 0)
+from alphalab.features import sessions
 
 
 class TrendPullback(AlphaFamily):
