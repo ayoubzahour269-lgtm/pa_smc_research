@@ -143,12 +143,22 @@ def beat_random(
         if res.n_trades:
             means.append(float(res.trades["r"].mean()))
     if not means:
-        return {"bat_hasard": float("nan"), "hasard_moyen": float("nan"), "n_temoins": 0}
+        return {
+            "bat_hasard": float("nan"),
+            "hasard_moyen": float("nan"),
+            "p_value": float("nan"),
+            "n_temoins": 0,
+        }
     arr = np.asarray(means, dtype=float)
+    # p-value de permutation : probabilite qu'un tirage apparie fasse aussi bien.
+    # La correction (1+k)/(1+n) interdit une p-value nulle, qui pretendrait une
+    # certitude que n tirages ne peuvent pas fournir.
+    p_value = (1 + int((arr >= actual).sum())) / (1 + arr.size)
     return {
         "bat_hasard": float((actual > arr).mean()),
         "hasard_moyen": float(arr.mean()),
         "hasard_ecart_type": float(arr.std(ddof=1)) if arr.size > 1 else 0.0,
+        "p_value": float(p_value),
         "n_temoins": int(arr.size),
     }
 

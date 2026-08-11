@@ -119,7 +119,11 @@ def evaluate(
         bh = control["bat_hasard"]
         checks["bat_hasard"] = bool(np.isfinite(bh) and bh >= GATE_MIN_BEAT_RANDOM)
     else:
-        details["temoin"] = {"bat_hasard": float("nan"), "n_temoins": 0}
+        details["temoin"] = {
+            "bat_hasard": float("nan"),
+            "p_value": float("nan"),
+            "n_temoins": 0,
+        }
         checks["bat_hasard"] = False
 
     stressed_market = with_cost_multiplier(market, GATE_COST_STRESS_MULT)
@@ -154,9 +158,15 @@ def record_trial(
 
     L'ordre compte : enregistrer apres coup permettrait d'oublier les essais rates,
     ce qui rendrait toute correction pour tests multiples cosmetique.
+
+    L'enregistrement est **idempotent par configuration**. Un essai est une
+    CONFIGURATION (famille, parametres, univers, timeframe, fenetre), pas une
+    execution : rejouer a l'identique ne cherche pas une hypothese de plus et ne doit
+    donc pas durcir la correction. A l'inverse, changer ne serait-ce qu'un parametre
+    cree une nouvelle signature, donc un nouvel essai — c'est exactement ce qu'il faut
+    compter.
     """
     entry: dict[str, Any] = {
-        "ts_utc": datetime.now(UTC).isoformat(),
         "label": label,
         "famille": family,
         "params": dict(params),
@@ -164,9 +174,20 @@ def record_trial(
         "timeframe": timeframe,
         "fenetre": window,
     }
+    signature = json.dumps(entry, ensure_ascii=False, sort_keys=True)
+
+    def _signature(entry_dict: dict[str, Any]) -> str:
+        stripped = {k: v for k, v in entry_dict.items() if k != "ts_utc"}
+        return json.dumps(stripped, ensure_ascii=False, sort_keys=True)
+
+    existing = {_signature(e) for e in read_trials(path)}
+    if signature in existing:
+        return entry
+
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
+        stamped = {**entry, "ts_utc": datetime.now(UTC).isoformat()}
+        fh.write(json.dumps(stamped, ensure_ascii=False, sort_keys=True) + "\n")
     return entry
 
 

@@ -10,11 +10,18 @@ from __future__ import annotations
 import argparse
 import sys
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 
 from alphalab import __version__
-from alphalab.config import HOLDOUT_START, UNIVERSE, in_sample_start
+from alphalab.config import (
+    HOLDOUT_START,
+    N_BOOTSTRAP,
+    N_RANDOM_CONTROL,
+    UNIVERSE,
+    in_sample_start,
+)
 from alphalab.data import costs, registry
 
 
@@ -103,6 +110,42 @@ def cmd_freeze(args: argparse.Namespace) -> int:
     return code
 
 
+def cmd_explore(args: argparse.Namespace) -> int:
+    from alphalab import explore
+    from alphalab.report import research
+
+    symbols = args.symbols or registry.tradable(args.tf)
+    if not symbols:
+        print(
+            f"Aucun symbole tradable en {args.tf} (il faut les cotes BID ET ASK).",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"Exploration de {len(symbols)} symbole(s) en {args.tf}...", flush=True)
+    result = explore.run(
+        symbols,
+        args.tf,
+        n_control=args.controls,
+        n_boot=args.bootstrap,
+        alpha=args.alpha,
+        progress=args.verbose,
+    )
+    print()
+    print(research.to_console(result))
+
+    if args.out:
+        path = Path(args.out)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(research.to_markdown(result), encoding="utf-8")
+        # Table brute a cote du rapport : permet de re-rendre ou de reanalyser sans
+        # relancer une campagne de plusieurs minutes.
+        csv_path = path.with_suffix(".csv")
+        result.table.to_csv(csv_path, index=False)
+        print(f"\nRapport ecrit : {path}\nTable brute   : {csv_path}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="alphalab", description=__doc__)
     parser.add_argument("--version", action="version", version=f"alphalab {__version__}")
@@ -124,6 +167,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_freeze.add_argument("--end", default="2026-07-01", help="borne exclue")
     p_freeze.add_argument("--version", dest="version", default="v1")
     p_freeze.set_defaults(func=cmd_freeze)
+
+    p_explore = sub.add_parser(
+        "explore", help="teste toutes les familles in-sample et rend le verdict corrige"
+    )
+    p_explore.add_argument("symbols", nargs="*", help="par defaut : tous les symboles tradables")
+    p_explore.add_argument("--tf", default="H1")
+    p_explore.add_argument("--controls", type=int, default=N_RANDOM_CONTROL)
+    p_explore.add_argument("--bootstrap", type=int, default=N_BOOTSTRAP)
+    p_explore.add_argument("--alpha", type=float, default=0.05, help="taux de fausses decouvertes")
+    p_explore.add_argument("--out", help="chemin d'un rapport Markdown a ecrire")
+    p_explore.add_argument("-v", "--verbose", action="store_true")
+    p_explore.set_defaults(func=cmd_explore)
 
     return parser
 

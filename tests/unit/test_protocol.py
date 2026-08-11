@@ -121,3 +121,40 @@ def test_journal_des_essais_est_append_only(tmp_path: Path) -> None:
 
 def test_journal_absent_donne_zero(tmp_path: Path) -> None:
     assert protocol.n_trials(tmp_path / "rien.jsonl") == 0
+
+
+def test_rejouer_la_meme_configuration_n_ajoute_pas_d_essai(tmp_path: Path) -> None:
+    """Un essai est une CONFIGURATION, pas une execution.
+
+    Rejouer une campagne a l'identique ne cherche pas de nouvelles hypotheses : gonfler
+    le compteur durcirait la correction sans raison et ferait disparaitre des resultats
+    reels a chaque relance.
+    """
+    journal = tmp_path / "journal.jsonl"
+    for _ in range(5):
+        protocol.record_trial(
+            "meme-essai",
+            family="test",
+            params={"seuil": 1},
+            universe=["A"],
+            timeframe="H1",
+            window="in-sample",
+            path=journal,
+        )
+    assert protocol.n_trials(journal) == 1
+
+
+def test_changer_un_parametre_cree_un_nouvel_essai(tmp_path: Path) -> None:
+    """A l'inverse, toute variante compte — c'est la que naissent les faux positifs."""
+    journal = tmp_path / "journal.jsonl"
+    for seuil in (1, 2, 3):
+        protocol.record_trial(
+            "variante",
+            family="test",
+            params={"seuil": seuil},
+            universe=["A"],
+            timeframe="H1",
+            window="in-sample",
+            path=journal,
+        )
+    assert protocol.n_trials(journal) == 3

@@ -19,6 +19,8 @@ echelle des approches heterogenes.
 
 from __future__ import annotations
 
+import heapq
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Final, Literal
@@ -280,8 +282,15 @@ def run(
 
     rows: list[dict[str, object]] = []
     skipped: dict[str, int] = {}
-    # Positions retenues : (entree, sortie, symbole). Sert au controle de concurrence.
-    held: list[tuple[pd.Timestamp, pd.Timestamp, str]] = []
+
+    # Positions ouvertes, dans un tas trie par date de sortie. Les ordres etant traites
+    # par date de signal croissante, leurs dates d'entree le sont aussi : une position
+    # deja retenue chevauche donc l'entree visee si et seulement si elle n'est pas
+    # encore sortie. Il suffit d'expulser les positions closes en tete de tas, ce qui
+    # remplace un balayage de toutes les positions par un cout logarithmique. Sur une
+    # campagne d'exploration (des milliers de rejeux), la difference est decisive.
+    open_positions: list[tuple[pd.Timestamp, str]] = []
+    per_symbol: Counter[str] = Counter()
 
     def note(reason: str) -> None:
         skipped[reason] = skipped.get(reason, 0) + 1
@@ -300,12 +309,14 @@ def run(
             continue
         entry_ts = data.index[i + 1]
 
-        # Une position est concurrente si elle est encore ouverte a l'entree visee.
-        open_now = [h for h in held if h[0] <= entry_ts <= h[1]]
-        if len(open_now) >= cfg.max_concurrent:
+        while open_positions and open_positions[0][0] < entry_ts:
+            _, closed_symbol = heapq.heappop(open_positions)
+            per_symbol[closed_symbol] -= 1
+
+        if len(open_positions) >= cfg.max_concurrent:
             note("plafond de positions simultanees")
             continue
-        if sum(1 for h in open_now if h[2] == order.symbol) >= cfg.max_per_symbol:
+        if per_symbol[order.symbol] >= cfg.max_per_symbol:
             note("plafond de positions par symbole")
             continue
 
@@ -314,7 +325,9 @@ def run(
             note(reason)
             continue
         rows.append(row)
-        held.append((entry_ts, row["exit_ts"], order.symbol))  # type: ignore[arg-type]
+        exit_ts: pd.Timestamp = row["exit_ts"]  # type: ignore[assignment]
+        heapq.heappush(open_positions, (exit_ts, order.symbol))
+        per_symbol[order.symbol] += 1
 
     trades = pd.DataFrame(rows, columns=list(TRADE_COLUMNS))
     if not trades.empty:
