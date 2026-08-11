@@ -37,6 +37,7 @@ IntrabarRule = Literal["stop_first", "target_first"]
 EXIT_TARGET: Final = "objectif"
 EXIT_STOP: Final = "stop"
 EXIT_TIME: Final = "echeance"
+EXIT_SCHEDULED: Final = "horaire"
 
 TRADE_COLUMNS: Final[tuple[str, ...]] = (
     "symbol",
@@ -59,6 +60,51 @@ TRADE_COLUMNS: Final[tuple[str, ...]] = (
 
 
 @dataclass(frozen=True, slots=True)
+class ExitPolicy:
+    """Regles de sortie autres que le stop initial et l'objectif fixe.
+
+    Cette dimension a longtemps manque au projet : 48 configurations ont ete evaluees
+    avec une seule et meme regle de sortie (stop fixe, objectif fixe, echeance). Or la
+    litterature de suivi de tendance est constante sur ce point — la sortie pese autant
+    que l'entree, et une monoculture de sortie peut faire paraitre mauvaise n'importe
+    quelle entree.
+
+    Toutes les distances sont exprimees en multiples de 1R (la distance du stop
+    initial), ce qui les rend comparables entre instruments et entre volatilites.
+    """
+
+    #: Distance du stop suiveur derriere l'extreme favorable, en R. None = pas de suivi.
+    trailing_r: float | None = None
+    #: Gain (en R) a partir duquel le stop remonte au prix d'entree. None = jamais.
+    breakeven_at_r: float | None = None
+    #: Heure UTC a laquelle la position est fermee d'office. None = jamais.
+    close_at_hour: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.trailing_r is not None and self.trailing_r <= 0:
+            raise ValueError(f"trailing_r doit etre > 0, recu {self.trailing_r}")
+        if self.breakeven_at_r is not None and self.breakeven_at_r <= 0:
+            raise ValueError(f"breakeven_at_r doit etre > 0, recu {self.breakeven_at_r}")
+        if self.close_at_hour is not None and not 0 <= self.close_at_hour <= 23:
+            raise ValueError(f"close_at_hour doit etre entre 0 et 23, recu {self.close_at_hour}")
+
+    @property
+    def label(self) -> str:
+        parts = []
+        if self.trailing_r is not None:
+            parts.append(f"suiveur{self.trailing_r}R")
+        if self.breakeven_at_r is not None:
+            parts.append(f"seuil{self.breakeven_at_r}R")
+        if self.close_at_hour is not None:
+            parts.append(f"cloture{self.close_at_hour}h")
+        return "+".join(parts) if parts else "fixe"
+
+
+#: Sortie de reference : stop fixe, objectif fixe, echeance. Celle des campagnes S6-S9.
+FIXED_EXIT: Final = ExitPolicy()
+
+
+@dataclass(frozen=True, slots=True)
 class Order:
     """Intention d'entree produite par une famille d'alpha.
 
@@ -74,6 +120,7 @@ class Order:
     max_hold: int  # nombre maximal de barres detenues
     risk_frac: float = 1.0  # fraction de risque unitaire (paliers A/B/C)
     tag: str = ""
+    exit_policy: ExitPolicy = FIXED_EXIT
 
     def __post_init__(self) -> None:
         if self.direction not in (1, -1):
@@ -225,8 +272,24 @@ def _simulate_one(
     outcome = EXIT_TIME
     ambiguous = False
 
+    policy = order.exit_policy
+    best = entry  # extreme favorable atteint, mis a jour en FIN de barre
+
     for j in range(entry_idx, last_idx + 1):
         hi, lo = data.high[j], data.low[j]
+
+        # Sortie a heure fixe : evaluee avant les barrieres, car elle represente une
+        # decision prise a l'ouverture de la barre (ex. "je ne garde pas de position
+        # apres la cloture cash").
+        scheduled = (
+            policy.close_at_hour is not None
+            and j > entry_idx
+            and int(data.index[j].hour) == policy.close_at_hour
+        )
+        if scheduled:
+            exit_idx, exit_price, outcome = j, float(data.close[j]), EXIT_SCHEDULED
+            break
+
         hit_stop = lo <= stop if d == 1 else hi >= stop
         hit_target = hi >= target if d == 1 else lo <= target
         if hit_stop and hit_target:
@@ -242,6 +305,21 @@ def _simulate_one(
         if hit_target:
             exit_idx, exit_price, outcome = j, target, EXIT_TARGET
             break
+
+        # Mise a jour des niveaux APRES le test des barrieres, donc pour la barre
+        # SUIVANTE. Ce decalage est la seule facon correcte de simuler un stop suiveur
+        # sur des barres : le mettre a jour avant le test permettrait a une barre d'etre
+        # stoppee par un niveau derive de son propre extreme — un stop qui se declenche
+        # grace a un prix qu'il n'avait pas encore vu.
+        if policy.trailing_r is not None or policy.breakeven_at_r is not None:
+            best = max(best, hi) if d == 1 else min(best, lo)
+            if policy.breakeven_at_r is not None:
+                progress = d * (best - entry) / risk_unit
+                if progress >= policy.breakeven_at_r:
+                    stop = max(stop, entry) if d == 1 else min(stop, entry)
+            if policy.trailing_r is not None:
+                trail = best - d * policy.trailing_r * risk_unit
+                stop = max(stop, trail) if d == 1 else min(stop, trail)
 
     r = (d * (exit_price - entry) - cost) / risk_unit
     row: dict[str, object] = {

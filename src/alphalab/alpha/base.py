@@ -23,7 +23,7 @@ from typing import Any, Final
 import numpy as np
 import pandas as pd
 
-from alphalab.backtest.engine import Order
+from alphalab.backtest.engine import FIXED_EXIT, ExitPolicy, Order
 from alphalab.data.costs import CostModel
 from alphalab.features import indicators
 
@@ -87,7 +87,9 @@ class Context:
             return None
         return (self.geometry.sl_atr * a, self.geometry.tp_atr * a)
 
-    def orders_from_signal(self, signal: pd.Series, tag: str) -> list[Order]:
+    def orders_from_signal(
+        self, signal: pd.Series, tag: str, exit_policy: ExitPolicy = FIXED_EXIT
+    ) -> list[Order]:
         """Convertit une serie de signaux (-1 / 0 / +1) en ordres executables.
 
         Point de vigilance : le signal en `t` declenche une entree en `t+1`. La serie
@@ -111,6 +113,7 @@ class Context:
                     target_distance=self.geometry.tp_atr * a,
                     max_hold=self.geometry.max_hold,
                     tag=tag,
+                    exit_policy=exit_policy,
                 )
             )
         return orders
@@ -123,10 +126,22 @@ class AlphaFamily(ABC):
     name: str = ""
     #: Ce que la famille teste, en une phrase.
     question: str = ""
+    #: Regle de sortie. Par defaut celle des campagnes S6-S9 : stop et objectif fixes.
+    #: Une famille qui la change teste une hypothese differente, et compte donc comme
+    #: un essai distinct.
+    exit_policy: ExitPolicy = FIXED_EXIT
+    #: Suffixe d'etiquette quand la famille ne differe que par sa sortie. `None` quand
+    #: la sortie est celle de reference et n'a pas a encombrer le nom.
+    exit_label: str | None = None
 
     def parameters(self) -> dict[str, Any]:
-        """Parametres effectifs, journalises avant lecture du resultat."""
-        return {}
+        """Parametres effectifs, journalises avant lecture du resultat.
+
+        La politique de sortie y figure toujours : deux familles d'entree identique
+        mais de sortie differente testent des hypotheses differentes et doivent compter
+        comme deux essais.
+        """
+        return {"sortie": self.exit_policy.label}
 
     @abstractmethod
     def signal(self, ctx: Context) -> pd.Series:
@@ -134,7 +149,7 @@ class AlphaFamily(ABC):
 
     def generate(self, ctx: Context) -> list[Order]:
         """Ordres produits par la famille pour ce contexte."""
-        return ctx.orders_from_signal(self.signal(ctx), tag=self.name)
+        return ctx.orders_from_signal(self.signal(ctx), self.name, self.exit_policy)
 
     def __repr__(self) -> str:  # pragma: no cover - confort de debogage
         return f"<{type(self).__name__} {self.name}>"

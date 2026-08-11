@@ -25,6 +25,7 @@ from alphalab.alpha.base import AlphaFamily
 from alphalab.alpha.families import (
     breakout,
     crossasset,
+    documented,
     ensemble,
     microstructure,
     regime,
@@ -32,6 +33,7 @@ from alphalab.alpha.families import (
     structure,
     timing,
 )
+from alphalab.backtest.engine import ExitPolicy
 
 
 def core_families() -> list[AlphaFamily]:
@@ -65,7 +67,44 @@ def core_families() -> list[AlphaFamily]:
         regime.IntradaySeasonality(),
         # Le consensus entre mecanismes distincts
         ensemble.Consensus(),
+        # Anomalies documentees dans la litterature. Leurs parametres viennent de
+        # l'exterieur : ils n'ont pas ete choisis en regardant nos donnees, ce qui
+        # elimine une source de sur-ajustement propre aux familles maison.
+        documented.IntradayMomentum(),
+        documented.OvernightDrift(direction=1),
+        documented.OvernightDrift(direction=-1),
+        documented.FailedBreakout(),
+        documented.RoundNumber(fade=True),
+        documented.RoundNumber(fade=False),
+        documented.TimeSeriesMomentum(),
+        # Variantes de SORTIE sur une entree constante.
+        #
+        # Les campagnes S6 a S9 ont evalue 48 configurations avec une seule et meme
+        # regle de sortie : stop fixe, objectif fixe, echeance. C'est un angle mort
+        # majeur — la litterature de suivi de tendance tient la sortie pour au moins
+        # aussi determinante que l'entree. Ces trois variantes isolent son effet en
+        # gardant l'entree strictement identique.
+        *_exit_variants(),
     ]
+
+
+def _exit_variants() -> list[AlphaFamily]:
+    """Meme entree, trois sorties differentes. Chaque variante est un essai distinct."""
+    policies = [
+        # Laisser courir : stop suiveur a 1R derriere l'extreme favorable.
+        ExitPolicy(trailing_r=1.0),
+        # Proteger tot : stop a l'entree des +1R atteint.
+        ExitPolicy(breakeven_at_r=1.0),
+        # Ne rien garder hors seance liquide : cloture d'office a 21h UTC.
+        ExitPolicy(close_at_hour=21),
+    ]
+    variants: list[AlphaFamily] = []
+    for policy in policies:
+        family = breakout.Breakout(condition="aucun")
+        family.exit_policy = policy
+        family.exit_label = policy.label
+        variants.append(family)
+    return variants
 
 
 def trend_family() -> AlphaFamily:
@@ -100,11 +139,11 @@ def all_families(peers: list[str] | None = None) -> list[AlphaFamily]:
 
 
 def family_label(family: AlphaFamily) -> str:
-    """Identifiant lisible, incluant la variante, l'actif pair et le sens s'ils existent."""
+    """Identifiant lisible, incluant la variante, l'actif pair, le sens et la sortie."""
     with_peer = getattr(family, "name_with_peer", None)
-    if with_peer is None:
-        return family.name
+    base = family.name if with_peer is None else str(with_peer)
     sign = getattr(family, "sign", None)
-    if sign is None:
-        return str(with_peer)
-    return f"{with_peer}{'+' if sign == 1 else '-'}"
+    if with_peer is not None and sign is not None:
+        base = f"{base}{'+' if sign == 1 else '-'}"
+    exit_label = getattr(family, "exit_label", None)
+    return base if exit_label is None else f"{base}/{exit_label}"
