@@ -146,6 +146,15 @@ def cmd_explore(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_daily(args: argparse.Namespace) -> int:
+    from alphalab.report import daily
+
+    date = args.date or str(pd.Timestamp.now(tz="UTC").normalize().date())
+    plan = daily.build(date, args.tf, symbols=args.symbols or None)
+    print(plan.to_console())
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="alphalab", description=__doc__)
     parser.add_argument("--version", action="version", version=f"alphalab {__version__}")
@@ -179,6 +188,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_explore.add_argument("--out", help="chemin d'un rapport Markdown a ecrire")
     p_explore.add_argument("-v", "--verbose", action="store_true")
     p_explore.set_defaults(func=cmd_explore)
+
+    p_daily = sub.add_parser("daily", help="plan de trading grade A/B/C pour une journee")
+    p_daily.add_argument("--date", help="AAAA-MM-JJ ; par defaut aujourd'hui")
+    p_daily.add_argument("--tf", default="H1")
+    p_daily.add_argument("--symbols", nargs="*", help="par defaut : tous les tradables")
+    p_daily.set_defaults(func=cmd_daily)
 
     return parser
 

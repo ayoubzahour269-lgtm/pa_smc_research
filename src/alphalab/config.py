@@ -134,6 +134,11 @@ N_RANDOM_CONTROL: Final[int] = 200
 #: Graine de reference. Toute mesure publiee doit etre reproductible a la graine pres.
 SEED: Final[int] = 12345
 
+#: Gain relatif de Brier minimal pour qu'un modele de probabilite soit declare utile.
+#: En deca, l'apport est indistinguable du bruit d'echantillonnage et la probabilite
+#: affichee ne vaut pas mieux que le taux de base.
+MIN_BRIER_SKILL: Final[float] = 0.01
+
 # Gate d'acceptation (protocole de validation, section 9 du plan).
 GATE_MIN_BEAT_RANDOM: Final[float] = 0.95
 GATE_COST_STRESS_MULT: Final[float] = 1.5
@@ -142,3 +147,27 @@ GATE_MIN_TRADES: Final[int] = 100
 # Porte de faisabilite du scalping : si le spread median depasse cette fraction de
 # l'excursion favorable mediane, le timeframe est declare non tradable.
 SCALPING_MAX_COST_FRAC_OF_MFE: Final[float] = 0.25
+
+# --------------------------------------------------------------------------------------
+# Paliers de conviction et risque — PRE-ENREGISTRES
+# --------------------------------------------------------------------------------------
+# Un plan est emis CHAQUE jour, sans exception. Les jours sans candidat de qualite
+# produisent une ligne de grade C, a taille minimale, avec sa probabilite calibree
+# affichee : on voit POURQUOI le jour est faible au lieu de le subir.
+
+#: Esperance-R minimale pour chaque palier, et fraction du capital risquee.
+GRADE_A_MIN_R: Final[float] = 0.15
+GRADE_B_MIN_R: Final[float] = 0.0
+GRADE_RISK: Final[dict[str, float]] = {"A": 0.010, "B": 0.005, "C": 0.001}
+
+#: Un grade A exige aussi d'etre dans le haut du classement du jour.
+GRADE_A_MIN_PERCENTILE: Final[float] = 0.90
+
+# Plafonds de portefeuille.
+MAX_DAILY_LOSS_R: Final[float] = 2.0
+MAX_CONCURRENT_POSITIONS: Final[int] = 3
+MAX_PER_SYMBOL: Final[int] = 1
+#: Plafond du risque de portefeuille ajuste de la correlation, en fraction du capital.
+MAX_PORTFOLIO_RISK: Final[float] = 0.02
+#: Au-dela, deux candidats sont consideres comme le meme pari.
+DUPLICATE_CORRELATION: Final[float] = 0.6

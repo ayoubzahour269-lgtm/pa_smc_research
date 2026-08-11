@@ -50,8 +50,27 @@ pip install -e ".[fetch]"
 ```bash
 alphalab status                  # ce qui est disponible sur disque, fenêtres in-sample
 alphalab spread XAUUSD --tf H1   # profil de coût réel, par heure UTC
+alphalab explore --tf H1         # teste toutes les familles, rend le verdict corrigé
+alphalab daily --date 2022-06-15 # plan gradé A/B/C d'une journée
 alphalab freeze EURUSD --tf M15 --side BID,ASK   # télécharge et gèle (réseau requis)
 ```
+
+### Le plan quotidien
+
+Un plan est émis **chaque jour**, sans exception. Ce qui varie n'est pas son existence
+mais la taille qu'il recommande :
+
+| Grade | Condition | Risque |
+|---|---|---|
+| A | `E[R] ≥ +0,15` et meilleure occasion du jour | 1,0 % |
+| B | `E[R] ≥ 0` | 0,5 % |
+| C | `E[R] < 0` — meilleur candidat malgré tout | 0,1 % |
+
+L'espérance vient d'une probabilité **calibrée hors échantillon**, pas d'un score de
+confluence. Quand le modèle n'apporte rien de mesurable, le plan l'écrit noir sur blanc
+au lieu d'afficher une probabilité rassurante. Il signale aussi les entrées tombant dans
+une fenêtre structurellement chère — une entrée à 22h UTC sur l'or paie 3,2× le spread
+médian, ce qui suffit à retourner le signe de l'espérance.
 
 ### Ajouter un instrument
 

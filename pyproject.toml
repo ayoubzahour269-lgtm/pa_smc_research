@@ -50,7 +50,12 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # N802 : les noms de tests contiennent "R" (unite de risque du projet), en majuscule
 # a dessein — c'est le vocabulaire du domaine, pas une entorse de style.
-"tests/*" = ["ARG", "N802"]
+"tests/*" = ["ARG", "N802", "N806"]
+# X (matrice de features) et y (labels) sont la convention universelle en
+# apprentissage statistique. Les renommer nuirait a la lisibilite pour un lecteur
+# du domaine.
+"src/alphalab/model/*" = ["N803", "N806"]
+"src/alphalab/report/daily.py" = ["N806"]
 
 [tool.mypy]
 python_version = "3.11"
