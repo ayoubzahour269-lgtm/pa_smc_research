@@ -186,6 +186,23 @@ Repères existants : spread médian 0,33 $ sur l'or H1 (1,05 $ au rollover de 22
 ~2,5 points sur le Nasdaq. Rapportés à une barre M1, ces coûts changent d'ordre de
 grandeur relatif.
 
+**Verdict rendu (Session 11).** La porte a été exécutée. Elle n'a pas eu besoin des
+snapshots M1/M5 : la grandeur mesurée dépend de la **durée de détention**, pas de la
+grille de bougies — ce qui a été vérifié en confrontant M15 et H1 sur les mêmes durées
+(écart 1 à 3 %). La loi `fraction = k / √durée` étant vérifiée sur trois durées, la
+durée minimale viable se résout directement :
+
+| Instrument | Durée minimale viable | Coût sur 1 min | Taux de réussite exigé à 1 min |
+|---|---|---|---|
+| NAS100 | 33 minutes | 143 % de l'excursion | 121 % — impossible |
+| XAUUSD | 44 minutes | 166 % de l'excursion | 133 % — impossible |
+
+**Le scalping au sens littéral — tenir une position quelques minutes — est déclaré non
+viable sur ces flux.** Ce n'est pas un jugement de méthode, c'est une contrainte
+arithmétique : aucun taux de réussite ne peut dépasser 100 %. Aucune stratégie M1/M5 ne
+sera développée sur ces deux instruments, et le fait de disposer un jour des snapshots
+M1 ne rouvrira pas la porte : la mesure ne dépend pas de la grille.
+
 ---
 
 ## 8. Ce qui n'est PAS repris de l'historique du dépôt

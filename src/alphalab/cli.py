@@ -1,8 +1,9 @@
 """Point d'entree unique de la plateforme.
 
-    alphalab status                 etat des donnees disponibles
-    alphalab spread XAUUSD --tf H1  profil de cout reel (mediane, pic horaire)
-    alphalab freeze EURUSD ...      telechargement + gel (necessite un acces reseau)
+alphalab status                 etat des donnees disponibles
+alphalab spread XAUUSD --tf H1  profil de cout reel (mediane, pic horaire)
+alphalab scalping               duree de detention minimale viable, par instrument
+alphalab freeze EURUSD ...      telechargement + gel (necessite un acces reseau)
 """
 
 from __future__ import annotations
@@ -59,8 +60,7 @@ def cmd_status(_: argparse.Namespace) -> int:
         print("\n=== Symboles connus mais absents du disque ===")
         for s in manquants:
             print(
-                f"  {s:8s} {UNIVERSE[s].label:20s} -> "
-                f"alphalab freeze {s} --tf M15 --side BID,ASK"
+                f"  {s:8s} {UNIVERSE[s].label:20s} -> alphalab freeze {s} --tf M15 --side BID,ASK"
             )
         print(
             "\nNote : le facteur dollar (correlation or <-> EUR/USD) exige EURUSD, "
@@ -84,6 +84,43 @@ def cmd_spread(args: argparse.Namespace) -> int:
         "chers. Une strategie qui n'exploite que ces creneaux est un artefact de cout."
     )
     return 0
+
+
+def cmd_scalping(args: argparse.Namespace) -> int:
+    """Porte de faisabilite : reste-t-il de l'amplitude apres le spread ?"""
+    from alphalab.backtest import feasibility
+
+    timeframes = [tf.strip() for tf in args.tf.split(",")]
+    symbols = args.symbols or registry.available_symbols()
+    code = 0
+    for symbol in symbols:
+        reports: dict[str, feasibility.FeasibilityReport] = {}
+        for tf in timeframes:
+            try:
+                reports[tf] = feasibility.assess(symbol, tf, horizons=tuple(args.horizons))
+            except Exception as exc:  # donnee absente : on le dit et on continue
+                print(f"[IGNORE] {symbol} {tf} : {exc}", file=sys.stderr)
+        if not reports:
+            code = 1
+            continue
+
+        print(f"\n=== {symbol} — faisabilite du scalping ===")
+        _print_table([r.summary() for r in reports.values()], "")
+
+        agreement = feasibility.grid_agreement(reports)
+        if not agreement.empty:
+            print("\nAccord entre grilles a duree egale (valide l'extrapolation) :")
+            print(agreement.to_string(index=False))
+
+        minutes = feasibility.min_viable_duration(reports)
+        print(f"\nDuree de detention minimale viable : {minutes:.0f} minutes")
+        print(feasibility.duration_table(reports).to_string(index=False))
+    print(
+        "\nLecture : taux_reussite_min est le taux de reussite qu'il faut atteindre pour "
+        "ne RIEN gagner, sur un trade symetrique de cette duree. Il ne depend d'aucune "
+        "strategie : c'est le peage du marche."
+    )
+    return code
 
 
 def cmd_freeze(args: argparse.Namespace) -> int:
@@ -167,6 +204,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_spread.add_argument("symbol")
     p_spread.add_argument("--tf", default="H1")
     p_spread.set_defaults(func=cmd_spread)
+
+    p_scalp = sub.add_parser(
+        "scalping", help="porte de faisabilite : cout reel contre amplitude disponible"
+    )
+    p_scalp.add_argument("symbols", nargs="*", help="par defaut : tous les symboles disponibles")
+    p_scalp.add_argument("--tf", default="M15,H1", help="grilles separees par des virgules")
+    p_scalp.add_argument(
+        "--horizons", type=int, nargs="+", default=[1, 2, 4, 8, 16], help="en barres"
+    )
+    p_scalp.set_defaults(func=cmd_scalping)
 
     p_freeze = sub.add_parser("freeze", help="telecharge et gele un snapshot immuable")
     p_freeze.add_argument("symbol", help=f"un de : {', '.join(UNIVERSE)}")

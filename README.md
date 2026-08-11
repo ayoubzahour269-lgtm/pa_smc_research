@@ -50,6 +50,7 @@ pip install -e ".[fetch]"
 ```bash
 alphalab status                  # ce qui est disponible sur disque, fenêtres in-sample
 alphalab spread XAUUSD --tf H1   # profil de coût réel, par heure UTC
+alphalab scalping                # durée de détention minimale viable après spread
 alphalab explore --tf H1         # teste toutes les familles, rend le verdict corrigé
 alphalab daily --date 2022-06-15 # plan gradé A/B/C d'une journée
 alphalab freeze EURUSD --tf M15 --side BID,ASK   # télécharge et gèle (réseau requis)
